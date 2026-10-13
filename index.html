@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>生日快乐</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 20% 20%, rgba(255, 180, 120, 0.18), transparent 45%),
+      radial-gradient(ellipse at 80% 30%, rgba(140, 180, 255, 0.18), transparent 50%),
+      radial-gradient(ellipse at 50% 90%, rgba(255, 120, 180, 0.12), transparent 55%),
+      linear-gradient(180deg, #06080f 0%, #070914 45%, #05060d 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    touch-action: manipulation;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    display: block;
+  }
+  .message {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -58%);
+    width: 100%;
+    text-align: center;
+    z-index: 5;
+    pointer-events: none;
+    color: #fff;
+    padding: 0 24px;
+  }
+  .message .en {
+    font-size: clamp(0.85rem, 3vw, 1.05rem);
+    letter-spacing: 0.35em;
+    color: rgba(255, 220, 180, 0.75);
+    text-indent: 0.35em;
+    opacity: 0;
+    animation: fadeUp 2s ease forwards;
+  }
+  .message h1 {
+    margin-top: 14px;
+    font-size: clamp(2.4rem, 9vw, 3.8rem);
+    font-weight: 300;
+    letter-spacing: 6px;
+    color: #fff;
+    text-shadow:
+      0 0 18px rgba(255, 225, 170, 0.45),
+      0 0 40px rgba(255, 145, 190, 0.25);
+    opacity: 0;
+    animation: fadeUp 2.6s ease forwards;
+  }
+  .message p {
+    margin-top: 20px;
+    font-size: clamp(1rem, 3.4vw, 1.18rem);
+    line-height: 1.9;
+    color: rgba(255, 255, 255, 0.78);
+    opacity: 0;
+    animation: fadeUp 3.6s ease forwards;
+  }
+  .message .line {
+    display: inline-block;
+    width: 60px;
+    height: 1px;
+    margin: 22px auto 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 210, 160, 0.6), transparent);
+    opacity: 0;
+    animation: fadeUp 3s ease forwards;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @media (max-width: 420px) {
+    .message h1 { letter-spacing: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="fw"></canvas>
+
+<div class="message">
+  <div class="en">HAPPY BIRTHDAY</div>
+  <h1>生日快乐</h1>
+  <div class="line"></div>
+  <p>愿你岁岁有欢喜，年年有惊喜<br />愿温柔不落空，愿美好都相逢</p>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('fw');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const rockets = [];
+  const particles = [];
+  const smokePuffs = [];
+  const glows = [];
+  const subShells = [];
+
+  const palettes = [
+    ['#ffd659', '#ffa23c', '#fff2a8'],
+    ['#ffec74', '#ffb347', '#fff7c7'],
+    ['#ff6b9d', '#ffb3e6', '#ffecf6'],
+    ['#ff8b5c', '#ffcf96', '#ffe9cf'],
+    ['#7cd8ff', '#3fa9ff', '#c7f0ff'],
+    ['#9bffd1', '#45e3a4', '#d7fff1'],
+    ['#c9a7ff', '#7b6cff', '#eadfff'],
+    ['#ffffff', '#ffe9f6', '#d8f0ff'],
+    ['#ff4f4f', '#ffb0b0', '#ffe1e1'],
+    ['#8affff', '#b5ffe0', '#e6fff7']
+  ];
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const TAU = Math.PI * 2;
+  const wind = 0.012;
+
+  // ---------------- 烟雾系统（缩小烟团） ----------------
+  class SmokePuff {
+    constructor(x, y, r) {
+      this.x = x;
+      this.y = y;
+      this.r = r;
+      this.vx = rand(-0.12, 0.12);
+      this.vy = rand(-0.4, -0.03);
+      this.life = 1;
+      this.maxLife = rand(100, 180);
+      this.age = 0;
+      this.turbulence = rand(0.25, 0.7);
+    }
+    update() {
+      this.age++;
+      this.vx += wind * 0.006;
+      this.vx *= 0.995;
+      this.vy = this.vy * 0.992 - 0.003;
+      this.x += this.vx;
+      this.y += this.vy;
+      this.r += 0.12; // 膨胀速度降低
+      this.life = Math.max(0, 1 - this.age / this.maxLife);
+    }
+    draw() {
+      const alpha = this.life * 0.28; // 降低烟雾透明度，更淡
+      const grad = ctx.createRadialGradient(this.x, this.y, this.r * 0.2, this.x, this.y, this.r);
+      grad.addColorStop(0, `rgba(210, 214, 222, ${alpha})`);
+      grad.addColorStop(0.45, `rgba(170, 175, 188, ${alpha * 0.5})`);
+      grad.addColorStop(1, 'rgba(140, 145, 160, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  function createExplosionSmoke(x, y) {
+    const count = 10; // 减少烟雾粒子数量
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * TAU + rand(-0.2, 0.2);
+      const speed = rand(0.4, 1.0);
+      const puff = new SmokePuff(x, y, rand(6, 11)); // 初始半径缩小
+      puff.vx += Math.cos(angle) * speed;
+      puff.vy += Math.sin(angle) * speed * 0.6;
+      smokePuffs.push(puff);
+    }
+  }
+
+  // ---------------- 烟花主体 ----------------
+  class Rocket {
+    constructor(tx, ty) {
+      this.x = W / 2 + rand(-W * 0.2, W * 0.2);
+      this.y = H;
+      this.tx = tx ?? rand(W * 0.15, W * 0.85);
+      this.ty = ty ?? rand(H * 0.08, H * 0.42);
+      const dx = this.tx - this.x;
+      const dy = this.ty - this.y;
+      const dist = Math.hypot(dx, dy);
+      const speed = rand(9.5, 12.5);
+      this.vx = (dx / dist) * speed;
+      this.vy = (dy / dist) * speed;
+      this.trail = [];
+      this.dead = false;
+      this.palette = palettes[Math.floor(Math.random() * palettes.length)];
+      this.hasSecondBurst = Math.random() < 0.38;
+    }
+    update() {
+      this.trail.push({ x: this.x, y: this.y, life: 1 });
+      if (this.trail.length > 20) this.trail.shift();
+      this.trail.forEach(t => t.life -= 0.055);
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vy += 0.045;
+      if (this.vy >= -1.1 || this.y <= this.ty) {
+        this.explode();
+        this.dead = true;
+      }
+    }
+    draw() {
+      ctx.save();
+      for (let i = 0; i < this.trail.length; i++) {
+        const t = this.trail[i];
+        if (t.life <= 0) continue;
+        ctx.globalAlpha = t.life * 0.85;
+        ctx.fillStyle = i % 2 ? '#fff4d6' : '#ffb347';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 1.5 + i * 0.07, 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 2.4, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+    explode() {
+      const type = Math.random();
+      let count, speedFn;
+
+      if (type < 0.4) {
+        count = rand(130, 180);
+        speedFn = () => rand(1.8, 6.4);
+      } else if (type < 0.75) {
+        count = rand(110, 150);
+        speedFn = () => 4.6 + rand(-0.3, 0.3);
+      } else {
+        count = rand(70, 110);
+        speedFn = () => rand(3.2, 5.8);
+      }
+
+      glows.push({
+        x: this.x,
+        y: this.y,
+        r: 8,
+        maxR: rand(75, 120),
+        life: 1
+      });
+
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * TAU + rand(-0.04, 0.04);
+        const speed = speedFn();
+        particles.push(new Particle(this.x, this.y, angle, speed, this.palette));
+      }
+
+      if (this.hasSecondBurst) {
+        const subCount = 6;
+        for (let i = 0; i < subCount; i++) {
+          const ang = (i / subCount) * TAU + rand(-0.18, 0.18);
+          const spd = rand(2.4, 3.8);
+          subShells.push({
+            x: this.x,
+            y: this.y,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd,
+            delay: rand(38, 72),
+            colorSet: palettes[Math.floor(Math.random() * palettes.length)]
+          });
+        }
+      }
+
+      createExplosionSmoke(this.x, this.y);
+    }
+  }
+
+  class Particle {
+    constructor(x, y, angle, speed, palette) {
+      this.x = x;
+      this.y = y;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+      this.color = palette[Math.floor(Math.random() * palette.length)];
+      this.life = 1;
+      this.size = rand(1.4, 2.6);
+      this.trail = [];
+      this.bright = 1;
+    }
+    update() {
+      this.trail.push({ x: this.x, y: this.y, life: this.life });
+      if (this.trail.length > 10) this.trail.shift();
+      this.vx *= 0.985;
+      this.vy *= 0.985;
+      this.vy += 0.042;
+      this.x += this.vx;
+      this.y += this.vy;
+      this.life -= 0.009;
+      this.bright = Math.max(0, this.bright - 0.012);
+    }
+    draw() {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < this.trail.length; i++) {
+        const t = this.trail[i];
+        ctx.globalAlpha = Math.max(0, t.life * 0.35);
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, this.size * 0.8, 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = Math.max(0, this.life);
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, TAU);
+      ctx.fill();
+      if (this.bright > 0.3) {
+        ctx.globalAlpha = this.bright * 0.35;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 3.2, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  function subBurst(x, y, colors) {
+    glows.push({
+      x,
+      y,
+      r: 5,
+      maxR: rand(40, 75),
+      life: 1
+    });
+    const cnt = rand(60, 100);
+    for (let i = 0; i < cnt; i++) {
+      const ang = (i / cnt) * TAU + rand(-0.05, 0.05);
+      const spd = rand(2, 4.5);
+      particles.push(new Particle(x, y, ang, spd, colors));
+    }
+    createExplosionSmoke(x, y);
+  }
+
+  function step() {
+    ctx.fillStyle = 'rgba(5, 7, 14, 0.18)';
+    ctx.fillRect(0, 0, W, H);
+
+    // 先绘制烟雾，放底层
+    for (let i = smokePuffs.length - 1; i >= 0; i--) {
+      smokePuffs[i].update();
+      smokePuffs[i].draw();
+      if (smokePuffs[i].life <= 0) smokePuffs.splice(i, 1);
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (let i = subShells.length - 1; i >= 0; i--) {
+      const s = subShells[i];
+      s.delay--;
+      s.x += s.vx;
+      s.y += s.vy;
+      s.vy += 0.03;
+      if (s.delay <= 0) {
+        subBurst(s.x, s.y, s.colorSet);
+        subShells.splice(i, 1);
+      }
+    }
+
+    for (let i = glows.length - 1; i >= 0; i--) {
+      const g = glows[i];
+      g.r += (g.maxR - g.r) * 0.35;
+      g.life -= 0.045;
+      if (g.life <= 0) { glows.splice(i, 1); continue; }
+      const grad = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, g.r);
+      grad.addColorStop(0, `rgba(255, 240, 200, ${0.9 * g.life})`);
+      grad.addColorStop(0.4, `rgba(255, 180, 90, ${0.35 * g.life})`);
+      grad.addColorStop(1, 'rgba(255, 120, 60, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(g.x, g.y, g.r, 0, TAU);
+      ctx.fill();
+    }
+
+    for (let i = rockets.length - 1; i >= 0; i--) {
+      rockets[i].update();
+      rockets[i].draw();
+      if (rockets[i].dead) rockets.splice(i, 1);
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      particles[i].update();
+      particles[i].draw();
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
+
+    ctx.restore();
+    requestAnimationFrame(step);
+  }
+  step();
+
+  function autoLaunch() {
+    rockets.push(new Rocket());
+  }
+
+  setTimeout(autoLaunch, 500);
+  setInterval(() => {
+    if (Math.random() < 0.75) autoLaunch();
+  }, 1100);
+
+  function launchAt(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    rockets.push(new Rocket(x, y));
+  }
+
+  window.addEventListener('click', e => launchAt(e.clientX, e.clientY));
+  window.addEventListener('touchstart', e => {
+    for (let i = 0; i < e.touches.length; i++) {
+      launchAt(e.touches[i].clientX, e.touches[i].clientY);
+    }
+  }, { passive: false });
+})();
+</script>
+
+</body>
+</html>
