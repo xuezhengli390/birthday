@@ -85,16 +85,13 @@
 </style>
 </head>
 <body>
-
 <canvas id="fw"></canvas>
-
 <div class="message">
   <div class="en">HAPPY BIRTHDAY</div>
   <h1>生日快乐</h1>
   <div class="line"></div>
-  <p>愿你岁岁有欢喜，年年有惊喜<br />愿温柔不落空，愿美好都相逢</p>
+  <p>愿烟火向星辰，所愿皆成真。<br />愿世间温柔，皆随一语，落于你的岁岁朝夕。</p>
 </div>
-
 <script>
 (() => {
   const canvas = document.getElementById('fw');
@@ -113,11 +110,41 @@
   resize();
   window.addEventListener('resize', resize);
 
+  // 根据文字颜色实时生成一张带“语”的离屏canvas
+  function createYuSprite(textColor){
+    const size = 64;
+    const cvs = document.createElement('canvas');
+    cvs.width = size;
+    cvs.height = size;
+    const c = cvs.getContext('2d');
+    c.clearRect(0,0,size,size);
+    c.fillStyle = textColor;
+    c.font = 'bold 40px sans‑serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText('语', size/2, size/2);
+    return cvs;
+  }
+
   const rockets = [];
   const particles = [];
+  const yuParticles = [];
   const smokePuffs = [];
   const glows = [];
   const subShells = [];
+
+  const YU_FIREWORK_PROBABILITY = 0.18;
+
+  // 配色组：文字颜色 + 粒子小方块底色
+  const yuColorPalettes = [
+    { text: '#ffffff', bg: 'rgba(10, 14, 24, 0.45)' },
+    { text: '#ffefb5', bg: 'rgba(40, 20, 0, 0.45)' },
+    { text: '#ffd1d1', bg: 'rgba(40, 10, 20, 0.45)' },
+    { text: '#d9f0ff', bg: 'rgba(10, 20, 40, 0.45)' },
+    { text: '#d7ffd7', bg: 'rgba(10, 30, 20, 0.45)' },
+    { text: '#e8d7ff', bg: 'rgba(20, 10, 40, 0.45)' },
+    { text: '#ffd9f5', bg: 'rgba(40, 10, 30, 0.45)' }
+  ];
 
   const palettes = [
     ['#ffd659', '#ffa23c', '#fff2a8'],
@@ -136,7 +163,6 @@
   const TAU = Math.PI * 2;
   const wind = 0.012;
 
-  // ---------------- 烟雾系统（缩小烟团） ----------------
   class SmokePuff {
     constructor(x, y, r) {
       this.x = x;
@@ -147,7 +173,6 @@
       this.life = 1;
       this.maxLife = rand(100, 180);
       this.age = 0;
-      this.turbulence = rand(0.25, 0.7);
     }
     update() {
       this.age++;
@@ -156,11 +181,11 @@
       this.vy = this.vy * 0.992 - 0.003;
       this.x += this.vx;
       this.y += this.vy;
-      this.r += 0.12; // 膨胀速度降低
+      this.r += 0.12;
       this.life = Math.max(0, 1 - this.age / this.maxLife);
     }
     draw() {
-      const alpha = this.life * 0.28; // 降低烟雾透明度，更淡
+      const alpha = this.life * 0.28;
       const grad = ctx.createRadialGradient(this.x, this.y, this.r * 0.2, this.x, this.y, this.r);
       grad.addColorStop(0, `rgba(210, 214, 222, ${alpha})`);
       grad.addColorStop(0.45, `rgba(170, 175, 188, ${alpha * 0.5})`);
@@ -171,113 +196,46 @@
       ctx.fill();
     }
   }
-
   function createExplosionSmoke(x, y) {
-    const count = 10; // 减少烟雾粒子数量
+    const count = 10;
     for (let i = 0; i < count; i++) {
       const angle = (i / count) * TAU + rand(-0.2, 0.2);
       const speed = rand(0.4, 1.0);
-      const puff = new SmokePuff(x, y, rand(6, 11)); // 初始半径缩小
+      const puff = new SmokePuff(x, y, rand(6, 11));
       puff.vx += Math.cos(angle) * speed;
       puff.vy += Math.sin(angle) * speed * 0.6;
       smokePuffs.push(puff);
     }
   }
 
-  // ---------------- 烟花主体 ----------------
-  class Rocket {
-    constructor(tx, ty) {
-      this.x = W / 2 + rand(-W * 0.2, W * 0.2);
-      this.y = H;
-      this.tx = tx ?? rand(W * 0.15, W * 0.85);
-      this.ty = ty ?? rand(H * 0.08, H * 0.42);
-      const dx = this.tx - this.x;
-      const dy = this.ty - this.y;
-      const dist = Math.hypot(dx, dy);
-      const speed = rand(9.5, 12.5);
-      this.vx = (dx / dist) * speed;
-      this.vy = (dy / dist) * speed;
-      this.trail = [];
-      this.dead = false;
-      this.palette = palettes[Math.floor(Math.random() * palettes.length)];
-      this.hasSecondBurst = Math.random() < 0.38;
+  // 语字粒子，传入预生成好的sprite画布，不再使用source‑in
+  class YuParticle {
+    constructor(x, y, angle, speed, spriteCvs, bgColor) {
+      this.x = x;
+      this.y = y;
+      this.vx = Math.cos(angle) * speed;
+      this.vy = Math.sin(angle) * speed;
+      this.sprite = spriteCvs;
+      this.bgColor = bgColor;
+      this.life = 1;
+      this.size = 22;
     }
     update() {
-      this.trail.push({ x: this.x, y: this.y, life: 1 });
-      if (this.trail.length > 20) this.trail.shift();
-      this.trail.forEach(t => t.life -= 0.055);
+      this.vx *= 0.985;
+      this.vy *= 0.985;
+      this.vy += 0.042;
       this.x += this.vx;
       this.y += this.vy;
-      this.vy += 0.045;
-      if (this.vy >= -1.1 || this.y <= this.ty) {
-        this.explode();
-        this.dead = true;
-      }
+      this.life -= 0.008;
     }
     draw() {
+      if (!this.sprite) return;
       ctx.save();
-      for (let i = 0; i < this.trail.length; i++) {
-        const t = this.trail[i];
-        if (t.life <= 0) continue;
-        ctx.globalAlpha = t.life * 0.85;
-        ctx.fillStyle = i % 2 ? '#fff4d6' : '#ffb347';
-        ctx.beginPath();
-        ctx.arc(t.x, t.y, 1.5 + i * 0.07, 0, TAU);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, 2.4, 0, TAU);
-      ctx.fill();
+      ctx.globalAlpha = Math.max(0, this.life);
+      ctx.fillStyle = this.bgColor;
+      ctx.fillRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+      ctx.drawImage(this.sprite, 0,0,64,64, this.x - this.size/2, this.y - this.size/2, this.size, this.size);
       ctx.restore();
-    }
-    explode() {
-      const type = Math.random();
-      let count, speedFn;
-
-      if (type < 0.4) {
-        count = rand(130, 180);
-        speedFn = () => rand(1.8, 6.4);
-      } else if (type < 0.75) {
-        count = rand(110, 150);
-        speedFn = () => 4.6 + rand(-0.3, 0.3);
-      } else {
-        count = rand(70, 110);
-        speedFn = () => rand(3.2, 5.8);
-      }
-
-      glows.push({
-        x: this.x,
-        y: this.y,
-        r: 8,
-        maxR: rand(75, 120),
-        life: 1
-      });
-
-      for (let i = 0; i < count; i++) {
-        const angle = (i / count) * TAU + rand(-0.04, 0.04);
-        const speed = speedFn();
-        particles.push(new Particle(this.x, this.y, angle, speed, this.palette));
-      }
-
-      if (this.hasSecondBurst) {
-        const subCount = 6;
-        for (let i = 0; i < subCount; i++) {
-          const ang = (i / subCount) * TAU + rand(-0.18, 0.18);
-          const spd = rand(2.4, 3.8);
-          subShells.push({
-            x: this.x,
-            y: this.y,
-            vx: Math.cos(ang) * spd,
-            vy: Math.sin(ang) * spd,
-            delay: rand(38, 72),
-            colorSet: palettes[Math.floor(Math.random() * palettes.length)]
-          });
-        }
-      }
-
-      createExplosionSmoke(this.x, this.y);
     }
   }
 
@@ -330,6 +288,111 @@
     }
   }
 
+  class Rocket {
+    constructor(tx, ty) {
+      this.x = W / 2 + rand(-W * 0.2, W * 0.2);
+      this.y = H;
+      this.tx = tx ?? rand(W * 0.15, W * 0.85);
+      this.ty = ty ?? rand(H * 0.08, H * 0.42);
+      const dx = this.tx - this.x;
+      const dy = this.ty - this.y;
+      const dist = Math.hypot(dx, dy);
+      const speed = rand(9.5, 12.5);
+      this.vx = (dx / dist) * speed;
+      this.vy = (dy / dist) * speed;
+      this.trail = [];
+      this.dead = false;
+      this.palette = palettes[Math.floor(Math.random() * palettes.length)];
+      this.hasSecondBurst = Math.random() < 0.38;
+      this.isYuFirework = Math.random() < YU_FIREWORK_PROBABILITY;
+    }
+    update() {
+      this.trail.push({ x: this.x, y: this.y, life: 1 });
+      if (this.trail.length > 20) this.trail.shift();
+      this.trail.forEach(t => t.life -= 0.055);
+      this.x += this.vx;
+      this.y += this.vy;
+      this.vy += 0.045;
+      if (this.vy >= -1.1 || this.y <= this.ty) {
+        this.explode();
+        this.dead = true;
+      }
+    }
+    draw() {
+      ctx.save();
+      for (let i = 0; i < this.trail.length; i++) {
+        const t = this.trail[i];
+        if (t.life <= 0) continue;
+        ctx.globalAlpha = t.life * 0.85;
+        ctx.fillStyle = i % 2 ? '#fff4d6' : '#ffb347';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y, 1.5 + i * 0.07, 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 2.4, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+    explode() {
+      glows.push({
+        x: this.x,
+        y: this.y,
+        r: 8,
+        maxR: rand(75, 120),
+        life: 1
+      });
+
+      const type = Math.random();
+      let count, speedFn;
+      if (type < 0.4) {
+        count = rand(130, 180);
+        speedFn = () => rand(1.8, 6.4);
+      } else if (type < 0.75) {
+        count = rand(110, 150);
+        speedFn = () => 4.6 + rand(-0.3, 0.3);
+      } else {
+        count = rand(70, 110);
+        speedFn = () => rand(3.2, 5.8);
+      }
+
+      if (this.isYuFirework) {
+        // 每发彩蛋：选配色 + 实时生成对应颜色文字sprite
+        const colorStyle = yuColorPalettes[Math.floor(Math.random() * yuColorPalettes.length)];
+        const spriteCvs = createYuSprite(colorStyle.text);
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * TAU + rand(-0.04, 0.04);
+          const speed = speedFn();
+          yuParticles.push(new YuParticle(this.x, this.y, angle, speed, spriteCvs, colorStyle.bg));
+        }
+      } else {
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * TAU + rand(-0.04, 0.04);
+          const speed = speedFn();
+          particles.push(new Particle(this.x, this.y, angle, speed, this.palette));
+        }
+        if (this.hasSecondBurst) {
+          const subCount = 6;
+          for (let i = 0; i < subCount; i++) {
+            const ang = (i / subCount) * TAU + rand(-0.18, 0.18);
+            const spd = rand(2.4, 3.8);
+            subShells.push({
+              x: this.x,
+              y: this.y,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd,
+              delay: rand(38, 72),
+              colorSet: palettes[Math.floor(Math.random() * palettes.length)]
+            });
+          }
+        }
+      }
+      createExplosionSmoke(this.x, this.y);
+    }
+  }
+
   function subBurst(x, y, colors) {
     glows.push({
       x,
@@ -351,7 +414,6 @@
     ctx.fillStyle = 'rgba(5, 7, 14, 0.18)';
     ctx.fillRect(0, 0, W, H);
 
-    // 先绘制烟雾，放底层
     for (let i = smokePuffs.length - 1; i >= 0; i--) {
       smokePuffs[i].update();
       smokePuffs[i].draw();
@@ -400,6 +462,12 @@
       if (particles[i].life <= 0) particles.splice(i, 1);
     }
 
+    for (let i = yuParticles.length - 1; i >= 0; i--) {
+      yuParticles[i].update();
+      yuParticles[i].draw();
+      if (yuParticles[i].life <= 0) yuParticles.splice(i, 1);
+    }
+
     ctx.restore();
     requestAnimationFrame(step);
   }
@@ -408,7 +476,6 @@
   function autoLaunch() {
     rockets.push(new Rocket());
   }
-
   setTimeout(autoLaunch, 500);
   setInterval(() => {
     if (Math.random() < 0.75) autoLaunch();
@@ -420,7 +487,6 @@
     const y = clientY - rect.top;
     rockets.push(new Rocket(x, y));
   }
-
   window.addEventListener('click', e => launchAt(e.clientX, e.clientY));
   window.addEventListener('touchstart', e => {
     for (let i = 0; i < e.touches.length; i++) {
@@ -429,6 +495,5 @@
   }, { passive: false });
 })();
 </script>
-
 </body>
 </html>
